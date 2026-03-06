@@ -2,6 +2,7 @@ export interface Env {
   RUNNER_KV: KVNamespace;
   RUNNER_API_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
+  ALLOWED_CHAT_ID: string;
 }
 
 interface TelegramUpdate {
@@ -29,12 +30,17 @@ export default {
       return new Response("OK", { status: 200 });
     }
 
+    // 只允許白名單 chat_id
+    const chat_id = String(message.chat.id);
+    if (chat_id !== env.ALLOWED_CHAT_ID) {
+      return new Response("OK", { status: 200 }); // 靜默忽略，不回覆
+    }
+
     const runnerUrl = await env.RUNNER_KV.get("runner_url");
     if (!runnerUrl) {
       return new Response("Runner not available", { status: 503 });
     }
 
-    const chat_id = String(message.chat.id);
     const text = message.text;
 
     ctx.waitUntil(
