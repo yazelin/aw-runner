@@ -65,9 +65,8 @@ jobs:
       - name: Notify runner online
         run: |
           TUNNEL_URL=$(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
-          MSG="🟢 aw-runner 已上線
-Tunnel: ${TUNNEL_URL}
-Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG=$(printf "🟢 aw-runner 已上線\nTunnel: %s\nRun: %s" "$TUNNEL_URL" "$RUN_URL")
           python3 .github/scripts/send_telegram_message.py "${{ secrets.TELEGRAM_CHAT_ID }}" "$MSG"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
