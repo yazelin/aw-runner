@@ -1,0 +1,60 @@
+name: runner
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6h (fallback); self-trigger fires at 5h55m
+  workflow_dispatch:
+
+jobs:
+  serve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared focal main' \
+            | sudo tee /etc/apt/sources.list.d/cloudflared.list
+          sudo apt-get update -q && sudo apt-get install -y cloudflared
+
+      - name: Install gh CLI (copilot extension)
+        run: |
+          gh extension install github/gh-copilot --force
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Install Python deps
+        run: pip install -r server/requirements.txt
+
+      - name: Start cloudflared tunnel
+        run: cloudflared tunnel --no-autoupdate run &
+        env:
+          TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+
+      - name: Wait for tunnel to connect
+        run: sleep 5
+
+      - name: Start FastAPI server
+        run: |
+          uvicorn server.main:app --host 0.0.0.0 --port 8000 &
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          RUNNER_API_KEY: ${{ secrets.RUNNER_API_KEY }}
+
+      - name: Wait for server to start
+        run: sleep 3
+
+      - name: Verify server health
+        run: curl -sf http://localhost:8000/health
+
+      - name: Sleep 5h55m
+        run: sleep 21300
+
+      - name: Self-trigger next run
+        run: gh workflow run runner.yml --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
