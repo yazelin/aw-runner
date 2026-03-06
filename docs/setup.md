@@ -93,6 +93,12 @@ id = "你的-namespace-id"
 3. 勾選 **workflow** scope
 4. 建立並複製 token
 
+#### Copilot GitHub Token
+1. 前往 https://github.com/settings/tokens → Fine-grained tokens
+2. Generate new token
+3. 在 **Permissions** 選 **Copilot API → Read-only**（或 Copilot Chat → Read）
+4. 建立並複製 token
+
 #### Runner API Key
 自行生成隨機密鑰：
 
@@ -108,8 +114,9 @@ gh secret set TELEGRAM_CHAT_ID   --body "<chat_id>"
 gh secret set CF_ACCOUNT_ID      --body "<cloudflare_account_id>"
 gh secret set CF_API_TOKEN       --body "<cloudflare_api_token>"
 gh secret set KV_NAMESPACE_ID    --body "<kv_namespace_id>"
-gh secret set RUNNER_API_KEY     --body "<random_key>"
-gh secret set GH_PAT             --body "<github_pat>"
+gh secret set RUNNER_API_KEY          --body "<random_key>"
+gh secret set GH_PAT                 --body "<github_pat>"
+gh secret set COPILOT_GITHUB_TOKEN   --body "<copilot_pat>"
 ```
 
 ### 步驟 5：Deploy Cloudflare Worker
@@ -168,6 +175,7 @@ gh run list --workflow=runner.yml --limit 1
 | `KV_NAMESPACE_ID` | Cloudflare KV namespace ID |
 | `RUNNER_API_KEY` | Worker 與 FastAPI 之間的共享密鑰 |
 | `GH_PAT` | GitHub PAT（workflow scope，用於 self-trigger） |
+| `COPILOT_GITHUB_TOKEN` | Fine-grained PAT with Copilot Requests permission |
 
 ---
 

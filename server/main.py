@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 RUNNER_API_KEY = os.environ["RUNNER_API_KEY"]
+COPILOT_GITHUB_TOKEN = os.environ["COPILOT_GITHUB_TOKEN"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 
@@ -35,10 +36,15 @@ async def send_telegram(chat_id: str, text: str) -> None:
 
 
 async def run_copilot(text: str) -> str:
+    prompt = (
+        f"{open('prompt.md').read()}\n\n"
+        f"## Message\n{text}"
+    )
     proc = await asyncio.create_subprocess_exec(
-        "gh", "copilot", "suggest", "-t", "shell", text,
+        "copilot", "--autopilot", "--yolo", "-p", prompt,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, "COPILOT_GITHUB_TOKEN": COPILOT_GITHUB_TOKEN},
     )
     stdout, _ = await proc.communicate()
     return stdout.decode().strip()

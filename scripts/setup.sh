@@ -224,6 +224,14 @@ info "點選 'Generate new token (classic)'。"
 info "勾選 'workflow' scope，然後生成 token。"
 ask GH_PAT "貼上你的 GitHub PAT：" true
 
+# ── Copilot GitHub Token ──
+echo ""
+echo -e "${BOLD}[Copilot GitHub Token]${RESET}"
+info "前往：https://github.com/settings/tokens → Fine-grained tokens"
+info "點選 'Generate new token'。"
+info "在 Permissions 選 'Copilot API → Read-only'（或 Copilot Chat → Read）。"
+ask COPILOT_GITHUB_TOKEN "貼上你的 Copilot GitHub Token：" true
+
 # ─────────────────────────────────────────────
 # 6. 設定 GitHub Secrets
 # ─────────────────────────────────────────────
@@ -239,8 +247,9 @@ set_secret "TELEGRAM_CHAT_ID"   "$TELEGRAM_CHAT_ID"
 set_secret "CF_ACCOUNT_ID"      "$CF_ACCOUNT_ID"
 set_secret "CF_API_TOKEN"       "$CF_API_TOKEN"
 set_secret "KV_NAMESPACE_ID"    "$KV_NAMESPACE_ID"
-set_secret "RUNNER_API_KEY"     "$RUNNER_API_KEY"
-set_secret "GH_PAT"             "$GH_PAT"
+set_secret "RUNNER_API_KEY"          "$RUNNER_API_KEY"
+set_secret "GH_PAT"                 "$GH_PAT"
+set_secret "COPILOT_GITHUB_TOKEN"   "$COPILOT_GITHUB_TOKEN"
 
 # ─────────────────────────────────────────────
 # 7. 設定 Wrangler Secrets & Deploy Worker
