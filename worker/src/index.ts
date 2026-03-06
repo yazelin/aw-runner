@@ -16,18 +16,27 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
     // GET /status — proxy to FastAPI /status
     if (request.method === "GET" && url.pathname === "/status") {
       const runnerUrl = await env.RUNNER_KV.get("runner_url");
       if (!runnerUrl) {
-        return Response.json({ status: "offline", runner_url: null }, { status: 503 });
+        return Response.json({ status: "offline", runner_url: null }, { status: 503, headers: corsHeaders });
       }
       try {
         const res = await fetch(`${runnerUrl}/status`, { signal: AbortSignal.timeout(5000) });
         const data = await res.json();
-        return Response.json({ ...data as object, runner_url: runnerUrl });
+        return Response.json({ ...data as object, runner_url: runnerUrl }, { headers: corsHeaders });
       } catch {
-        return Response.json({ status: "unreachable", runner_url: runnerUrl }, { status: 503 });
+        return Response.json({ status: "unreachable", runner_url: runnerUrl }, { status: 503, headers: corsHeaders });
       }
     }
 
