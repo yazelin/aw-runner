@@ -86,7 +86,7 @@ async def task(
 
 async def _process(req: TaskRequest) -> None:
     try:
-        result = await run_copilot(req.text, req.chat_id)
-        await send_telegram(req.chat_id, result or "(no output)")
+        await run_copilot(req.text, req.chat_id)
+        # Copilot sends the reply itself via .github/scripts/send_telegram_message.py
     except Exception as e:
         await send_telegram(req.chat_id, f"Error: {e}")
