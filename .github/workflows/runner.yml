@@ -23,7 +23,7 @@ jobs:
 
       - name: Install gh CLI (copilot extension)
         run: |
-          gh extension install github/gh-copilot --force
+          gh copilot --version || gh extension install github/gh-copilot
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
