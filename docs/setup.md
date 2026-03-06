@@ -6,19 +6,23 @@
 Telegram 用戶
      ↓ 傳訊息
 Telegram Bot
-     ↓ webhook
-Cloudflare Worker          ← 公開接收 webhook，轉發請求
-     ↓ 讀 KV runner_url
-GitHub Actions Runner      ← 長期運行 (6h 接力)
-     ↓ cloudflared quick tunnel 暴露
-FastAPI Server (port 8000)
-     ↓ gh copilot suggest
+     ↓ webhook（隨機 secret path 保護）
+Cloudflare Worker
+     ├─ 驗證 chat_id 白名單
+     ├─ 讀 KV runner_url
+     ↓ POST /task (x-api-key 保護)
+FastAPI Server（GitHub Actions Runner）
+     ↓ copilot --autopilot --yolo -p
+Copilot CLI（AI Agent，可呼叫 shell 工具）
+     ↓ python3 .github/scripts/send_telegram_message.py
 回覆 Telegram
 ```
 
-## 前置需求
+Runner 每 6 小時接力一次（self-trigger），啟動後主動發 Telegram 上線通知。
 
-安裝以下工具：
+---
+
+## 前置需求
 
 | 工具 | 安裝方式 |
 |------|---------|
@@ -26,6 +30,8 @@ FastAPI Server (port 8000)
 | [Node.js](https://nodejs.org) 18+ | 官網下載或 nvm |
 | Python 3.10+ | 系統內建或官網 |
 | curl, openssl | 系統內建 |
+
+---
 
 ## 快速安裝（建議）
 
@@ -44,13 +50,13 @@ bash scripts/setup.sh
 
 ## 手動安裝（逐步說明）
 
-### 步驟 1：建立 GitHub Repo
+### 步驟 1：建立 GitHub Repo（Public）
 
 ```bash
 gh repo create aw-runner --public --source=. --remote=origin --push
 ```
 
-> Public repo 可使用無限 GitHub Actions 分鐘數。
+> **Public repo** 可使用無限 GitHub Actions 分鐘數。Private repo 免費方案每月只有 2,000 分鐘。
 
 ### 步驟 2：建立 Cloudflare KV Namespace
 
@@ -61,7 +67,7 @@ npx wrangler login          # 登入 Cloudflare
 npx wrangler kv namespace create "RUNNER_KV"
 ```
 
-記下輸出的 `id`，填入 `worker/wrangler.toml`：
+記下輸出的 `id`，確認已填入 `worker/wrangler.toml`：
 
 ```toml
 [[kv_namespaces]]
@@ -87,21 +93,24 @@ id = "你的-namespace-id"
 3. 確認 Account Resources 選到你的帳號
 4. 建立並複製 token
 
-#### GitHub PAT
+#### Cloudflare Account ID
+登入 Cloudflare Dashboard，右側邊欄可找到 Account ID。
+
+#### GitHub PAT（workflow scope）
 1. 前往 https://github.com/settings/tokens
 2. Generate new token (classic)
 3. 勾選 **workflow** scope
 4. 建立並複製 token
 
-#### Copilot GitHub Token
+#### Copilot GitHub Token（Fine-grained）
 1. 前往 https://github.com/settings/tokens → Fine-grained tokens
 2. Generate new token
-3. 在 **Permissions** 選 **Copilot API → Read-only**（或 Copilot Chat → Read）
+3. Permissions → **Copilot API → Read-only**
 4. 建立並複製 token
 
-#### Runner API Key
-自行生成隨機密鑰：
+> 此 token 需要帳號有 **GitHub Copilot 訂閱**。
 
+#### Runner API Key
 ```bash
 openssl rand -hex 32
 ```
@@ -109,14 +118,14 @@ openssl rand -hex 32
 ### 步驟 4：設定 GitHub Secrets
 
 ```bash
-gh secret set TELEGRAM_BOT_TOKEN --body "<token>"
-gh secret set TELEGRAM_CHAT_ID   --body "<chat_id>"
-gh secret set CF_ACCOUNT_ID      --body "<cloudflare_account_id>"
-gh secret set CF_API_TOKEN       --body "<cloudflare_api_token>"
-gh secret set KV_NAMESPACE_ID    --body "<kv_namespace_id>"
-gh secret set RUNNER_API_KEY          --body "<random_key>"
-gh secret set GH_PAT                 --body "<github_pat>"
-gh secret set COPILOT_GITHUB_TOKEN   --body "<copilot_pat>"
+gh secret set TELEGRAM_BOT_TOKEN    --body "<token>"
+gh secret set TELEGRAM_CHAT_ID      --body "<chat_id>"
+gh secret set CF_ACCOUNT_ID         --body "<cloudflare_account_id>"
+gh secret set CF_API_TOKEN          --body "<cloudflare_api_token>"
+gh secret set KV_NAMESPACE_ID       --body "<kv_namespace_id>"
+gh secret set RUNNER_API_KEY        --body "<random_key>"
+gh secret set GH_PAT                --body "<github_pat>"
+gh secret set COPILOT_GITHUB_TOKEN  --body "<copilot_pat>"
 ```
 
 ### 步驟 5：Deploy Cloudflare Worker
@@ -125,17 +134,17 @@ gh secret set COPILOT_GITHUB_TOKEN   --body "<copilot_pat>"
 cd worker
 echo "<RUNNER_API_KEY>"     | npx wrangler secret put RUNNER_API_KEY
 echo "<TELEGRAM_BOT_TOKEN>" | npx wrangler secret put TELEGRAM_BOT_TOKEN
+echo "<TELEGRAM_CHAT_ID>"   | npx wrangler secret put ALLOWED_CHAT_ID
 npx wrangler deploy
 ```
 
-記下部署完成後的 Worker URL，例如：
-`https://aw-runner-worker.xxx.workers.dev`
+記下部署後的 Worker URL：`https://aw-runner-worker.<subdomain>.workers.dev`
 
 ### 步驟 6：設定 Telegram Webhook
 
 ```bash
 SECRET_PATH=$(openssl rand -hex 16)
-WORKER_URL="https://aw-runner-worker.xxx.workers.dev"
+WORKER_URL="https://aw-runner-worker.<subdomain>.workers.dev"
 BOT_TOKEN="你的 TELEGRAM_BOT_TOKEN"
 
 curl "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${WORKER_URL}/${SECRET_PATH}"
@@ -149,45 +158,68 @@ curl "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${WORKER_URL}/${SE
 gh workflow run runner.yml
 ```
 
+Runner 啟動後（約 2~3 分鐘）會主動傳 Telegram 通知：
+```
+🟢 aw-runner 已上線
+Tunnel: https://xxxx.trycloudflare.com
+Run: https://github.com/...
+```
+
 ---
 
 ## 驗證
 
 ```bash
-# 確認 runner 正在執行
+# 查 runner 狀態
+curl https://aw-runner-worker.<subdomain>.workers.dev/status
+
+# 確認 workflow 執行中
 gh run list --workflow=runner.yml --limit 1
 # 預期 status: in_progress
-
-# 傳訊息給你的 Telegram bot
-# 預期在 10~30 秒內收到 gh copilot 的回覆
 ```
+
+狀態頁：`https://<username>.github.io/aw-runner/`
+
+傳訊息給 bot 測試，約 10~60 秒後收到 Copilot AI 回覆。
 
 ---
 
-## Required GitHub Secrets 一覽
+## Required Secrets 一覽
 
 | Secret | 說明 |
 |--------|------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token（來自 @BotFather） |
-| `TELEGRAM_CHAT_ID` | 你的 Telegram chat ID |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token（@BotFather） |
+| `TELEGRAM_CHAT_ID` | 允許使用 bot 的 chat ID（白名單） |
 | `CF_ACCOUNT_ID` | Cloudflare 帳號 ID |
-| `CF_API_TOKEN` | Cloudflare API token（Workers KV 寫入權限） |
+| `CF_API_TOKEN` | Cloudflare API token（Workers + KV 寫入） |
 | `KV_NAMESPACE_ID` | Cloudflare KV namespace ID |
-| `RUNNER_API_KEY` | Worker 與 FastAPI 之間的共享密鑰 |
-| `GH_PAT` | GitHub PAT（workflow scope，用於 self-trigger） |
-| `COPILOT_GITHUB_TOKEN` | Fine-grained PAT with Copilot Requests permission |
+| `RUNNER_API_KEY` | Worker 與 FastAPI 共享密鑰 |
+| `GH_PAT` | GitHub PAT（`workflow` scope，self-trigger 用） |
+| `COPILOT_GITHUB_TOKEN` | Fine-grained PAT（Copilot Requests 權限） |
 
 ---
 
 ## 運作原理
 
 1. **GitHub Actions** 啟動 `runner.yml` job（最長 6 小時）
-2. FastAPI 在 port 8000 啟動
-3. `cloudflared tunnel --url` 建立 quick tunnel，取得 `*.trycloudflare.com` URL
-4. Runner 將 URL 寫入 Cloudflare KV（key: `runner_url`）
-5. Telegram 訊息 → Worker 從 KV 讀取 URL → 轉發給 FastAPI
-6. FastAPI 呼叫 `gh copilot suggest` → 回傳結果給 Telegram
-7. job 結束前（5h55m 後）自動觸發下一個 run，實現無限接力
+2. 安裝 Copilot CLI (`npm install -g @github/copilot`) 及 Python 依賴
+3. FastAPI 在 port 8000 啟動
+4. `cloudflared tunnel --url` 建立 quick tunnel，取得 `*.trycloudflare.com` URL
+5. Runner 將 URL 寫入 Cloudflare KV（`runner_url`）
+6. 發送 Telegram 上線通知
+7. Telegram 訊息 → Worker 驗證 → FastAPI `/task` → Copilot Agent 處理 → 回覆
+8. 5h55m 後自動觸發下一個 run（6 小時接力）
+
+---
+
+## 安全層級
+
+| 層 | 防護 |
+|----|------|
+| Webhook URL | 隨機 secret path，外人無法猜到 |
+| Worker | 驗證 `chat_id`，非白名單靜默忽略 |
+| FastAPI `/task` | 驗證 `x-api-key`，無效 key 回 401 |
+| Tunnel URL | 隨機子網域，每次重啟都不同 |
 
 ---
 
@@ -195,13 +227,17 @@ gh run list --workflow=runner.yml --limit 1
 
 **Q: Runner 沒有回應？**
 - 確認 Actions tab 的 job 狀態是 `in_progress`
-- 查看 job log 確認 tunnel URL 成功寫入 KV
-- 確認 Telegram webhook 設定正確
+- 打 `/status` endpoint 確認 runner 在線
+- 確認你的 chat_id 在白名單內
 
-**Q: `gh copilot` 沒有輸出？**
-- 確認 `GH_PAT` 有效且帳號有 GitHub Copilot 訂閱
-- 查看 job log 的 `_process` 錯誤訊息
+**Q: Copilot 沒有回覆？**
+- 確認 `COPILOT_GITHUB_TOKEN` 有效且帳號有 GitHub Copilot 訂閱
+- 查看 Actions job log 確認 Copilot CLI 正常啟動
 
 **Q: 每 6 小時有空窗期嗎？**
-- 極少數情況下 self-trigger 和新 job 啟動之間可能有 1~2 分鐘空窗
-- 可設定 cron `'0 */6 * * *'` 作為備援（已內建）
+- 極少數情況下新 job 啟動前可能有 1~2 分鐘空窗
+- 已內建 cron `'0 */6 * * *'` 作為備援觸發
+
+**Q: 如何自訂 Copilot 的行為？**
+- 編輯 `prompt.md` 修改系統提示詞
+- 編輯 `.github/mcp-config.json` 加入 MCP servers（nanobanana、tavily 等）
