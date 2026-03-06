@@ -64,11 +64,11 @@ jobs:
 
       - name: Notify runner online
         run: |
-          python3 .github/scripts/send_telegram_message.py \
-            "${{ secrets.TELEGRAM_CHAT_ID }}" \
-            "🟢 aw-runner 已上線
-Tunnel: $(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
+          TUNNEL_URL=$(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
+          MSG="🟢 aw-runner 已上線
+Tunnel: ${TUNNEL_URL}
 Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 .github/scripts/send_telegram_message.py "${{ secrets.TELEGRAM_CHAT_ID }}" "$MSG"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
