@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 2
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Ensure runner is alive
         run: |
           COUNT=$(gh run list --workflow=runner.yml \
@@ -21,11 +23,35 @@ jobs:
             --status queued --json databaseId -q 'length')
           TOTAL=$((COUNT + QUEUED))
           echo "in_progress: $COUNT, queued: $QUEUED"
+
+          # Check tunnel health via Worker /status
+          STATUS=$(curl -sf --max-time 8 \
+            "https://aw-runner-worker.yazelinj303.workers.dev/status" \
+            -H "Accept: application/json" 2>/dev/null \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" \
+            2>/dev/null || echo "error")
+          echo "Tunnel status: $STATUS"
+
+          NEED_RESTART=false
+
           if [ "$TOTAL" -eq 0 ]; then
-            echo "Runner is down, triggering..."
-            gh workflow run runner.yml --repo ${{ github.repository }}
+            echo "No active runner, triggering..."
+            NEED_RESTART=true
+          elif [ "$STATUS" != "ok" ]; then
+            echo "Tunnel is $STATUS — cancelling dead run and restarting..."
+            gh run list --workflow=runner.yml \
+              --repo ${{ github.repository }} \
+              --status in_progress --json databaseId -q '.[].databaseId' \
+              | xargs -r -I{} gh run cancel {} --repo ${{ github.repository }}
+            sleep 5
+            NEED_RESTART=true
           else
-            echo "Runner OK ($TOTAL active)"
+            echo "Runner OK (jobs: $TOTAL, tunnel: $STATUS)"
+          fi
+
+          if [ "$NEED_RESTART" = "true" ]; then
+            gh workflow run runner.yml --repo ${{ github.repository }}
+            echo "Triggered new runner run"
           fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
