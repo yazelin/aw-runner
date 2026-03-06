@@ -62,6 +62,16 @@ jobs:
         env:
           NO_AUTOUPDATE: "true"
 
+      - name: Notify runner online
+        run: |
+          python3 .github/scripts/send_telegram_message.py \
+            "${{ secrets.TELEGRAM_CHAT_ID }}" \
+            "🟢 aw-runner 已上線
+Tunnel: $(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
+Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
       - name: Sleep 5h55m
         run: sleep 21300
 
