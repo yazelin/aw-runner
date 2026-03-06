@@ -14,6 +14,23 @@ interface TelegramUpdate {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+
+    // GET /status — proxy to FastAPI /status
+    if (request.method === "GET" && url.pathname === "/status") {
+      const runnerUrl = await env.RUNNER_KV.get("runner_url");
+      if (!runnerUrl) {
+        return Response.json({ status: "offline", runner_url: null }, { status: 503 });
+      }
+      try {
+        const res = await fetch(`${runnerUrl}/status`, { signal: AbortSignal.timeout(5000) });
+        const data = await res.json();
+        return Response.json({ ...data as object, runner_url: runnerUrl });
+      } catch {
+        return Response.json({ status: "unreachable", runner_url: runnerUrl }, { status: 503 });
+      }
+    }
+
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405 });
     }

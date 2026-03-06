@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 
 import httpx
@@ -11,6 +12,8 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 RUNNER_API_KEY = os.environ["RUNNER_API_KEY"]
 COPILOT_GITHUB_TOKEN = os.environ["COPILOT_GITHUB_TOKEN"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+
+START_TIME = time.time()
 
 
 @asynccontextmanager
@@ -53,6 +56,18 @@ async def run_copilot(text: str) -> str:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    elapsed = int(time.time() - START_TIME)
+    hours, rem = divmod(elapsed, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return {
+        "status": "ok",
+        "uptime_seconds": elapsed,
+        "uptime": f"{hours}h {minutes}m {seconds}s",
+    }
 
 
 @app.post("/task")
