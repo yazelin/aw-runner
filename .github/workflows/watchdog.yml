@@ -1,0 +1,31 @@
+name: watchdog
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ensure runner is alive
+        run: |
+          COUNT=$(gh run list --workflow=runner.yml \
+            --repo ${{ github.repository }} \
+            --status in_progress --json databaseId -q 'length')
+          QUEUED=$(gh run list --workflow=runner.yml \
+            --repo ${{ github.repository }} \
+            --status queued --json databaseId -q 'length')
+          TOTAL=$((COUNT + QUEUED))
+          echo "in_progress: $COUNT, queued: $QUEUED"
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "Runner is down, triggering..."
+            gh workflow run runner.yml --repo ${{ github.repository }}
+          else
+            echo "Runner OK ($TOTAL active)"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}

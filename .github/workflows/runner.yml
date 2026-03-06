@@ -1,8 +1,6 @@
 name: runner
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'   # every 6h (fallback); self-trigger fires at 5h55m
   workflow_dispatch:
 
 jobs:
@@ -71,10 +69,5 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-      - name: Sleep 5h55m
-        run: sleep 21300
-
-      - name: Self-trigger next run
-        run: gh workflow run runner.yml --repo ${{ github.repository }}
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+      - name: Sleep 6h
+        run: sleep 21600
