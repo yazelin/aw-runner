@@ -30,17 +30,8 @@ jobs:
       - name: Install Python deps
         run: pip install -r server/requirements.txt
 
-      - name: Start cloudflared tunnel
-        run: cloudflared tunnel --no-autoupdate run &
-        env:
-          TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
-
-      - name: Wait for tunnel to connect
-        run: sleep 5
-
       - name: Start FastAPI server
-        run: |
-          uvicorn server.main:app --host 0.0.0.0 --port 8000 &
+        run: uvicorn server.main:app --host 0.0.0.0 --port 8000 &
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           RUNNER_API_KEY: ${{ secrets.RUNNER_API_KEY }}
@@ -50,6 +41,19 @@ jobs:
 
       - name: Verify server health
         run: curl -sf http://localhost:8000/health
+
+      - name: Start cloudflared quick tunnel and register URL
+        run: |
+          cloudflared tunnel --url http://localhost:8000 --logfile /tmp/cf.log &
+          sleep 10
+          TUNNEL_URL=$(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
+          echo "Tunnel URL: $TUNNEL_URL"
+          curl -sf -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/storage/kv/namespaces/${{ secrets.KV_NAMESPACE_ID }}/values/runner_url" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -d "$TUNNEL_URL"
+        env:
+          NO_AUTOUPDATE: "true"
 
       - name: Sleep 5h55m
         run: sleep 21300

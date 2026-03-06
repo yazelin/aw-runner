@@ -1,5 +1,5 @@
 export interface Env {
-  RUNNER_URL: string;
+  RUNNER_KV: KVNamespace;
   RUNNER_API_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
 }
@@ -29,11 +29,16 @@ export default {
       return new Response("OK", { status: 200 });
     }
 
+    const runnerUrl = await env.RUNNER_KV.get("runner_url");
+    if (!runnerUrl) {
+      return new Response("Runner not available", { status: 503 });
+    }
+
     const chat_id = String(message.chat.id);
     const text = message.text;
 
     ctx.waitUntil(
-      fetch(`${env.RUNNER_URL}/task`, {
+      fetch(`${runnerUrl}/task`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
