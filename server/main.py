@@ -38,10 +38,12 @@ async def send_telegram(chat_id: str, text: str) -> None:
         )
 
 
-async def run_copilot(text: str) -> str:
+async def run_copilot(text: str, chat_id: str) -> str:
     prompt = (
         f"{open('prompt.md').read()}\n\n"
-        f"## Message\n{text}"
+        f"## Message\n"
+        f"- Chat ID: {chat_id}\n"
+        f"- Text: {text}"
     )
     proc = await asyncio.create_subprocess_exec(
         "copilot", "--autopilot", "--yolo", "-p", prompt,
@@ -84,7 +86,7 @@ async def task(
 
 async def _process(req: TaskRequest) -> None:
     try:
-        result = await run_copilot(req.text)
+        result = await run_copilot(req.text, req.chat_id)
         await send_telegram(req.chat_id, result or "(no output)")
     except Exception as e:
         await send_telegram(req.chat_id, f"Error: {e}")
