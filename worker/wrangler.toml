@@ -1,0 +1,8 @@
+name = "aw-runner-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-02"
+
+# Secrets (set via wrangler secret put):
+# RUNNER_URL        - e.g. https://runner.yourdomain.com
+# RUNNER_API_KEY    - shared key with FastAPI
+# TELEGRAM_BOT_TOKEN - for optional direct reply on error
