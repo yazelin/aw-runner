@@ -13,6 +13,7 @@
     --green-glow: rgba(0,255,65,0.15);
     --amber: #ffb700;
     --red: #ff3b3b;
+    --cyan: #00e5ff;
     --bg: #030507;
     --surface: rgba(0,255,65,0.03);
     --border: rgba(0,255,65,0.12);
@@ -199,6 +200,17 @@
   .status-text.offline { color: var(--red);   text-shadow: 0 0 20px rgba(255,59,59,0.4); }
   .status-text.loading { color: var(--amber); }
 
+  .active-badge {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    padding: 2px 10px;
+    border-radius: 2px;
+    background: rgba(0,255,65,0.1);
+    border: 1px solid rgba(0,255,65,0.3);
+    color: var(--green);
+    margin-left: auto;
+  }
+
   /* Metrics grid */
   .metrics {
     display: grid;
@@ -242,6 +254,118 @@
   }
 
   .metric-value.dim { color: var(--green-dim); }
+
+  /* Runner slots section */
+  .slots-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 600px) {
+    .slots-grid { grid-template-columns: 1fr; }
+  }
+
+  .slot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.5s;
+  }
+
+  .slot-card.ok {
+    border-color: rgba(0,255,65,0.2);
+  }
+
+  .slot-card.down {
+    border-color: rgba(255,59,59,0.15);
+  }
+
+  .slot-card.active {
+    border-color: rgba(0,229,255,0.3);
+    box-shadow: 0 0 20px rgba(0,229,255,0.05);
+  }
+
+  .slot-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .slot-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .slot-dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .slot-dot.down { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .slot-dot.no-url { background: #444; }
+
+  .slot-name {
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .slot-role {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    padding: 1px 8px;
+    border-radius: 2px;
+    margin-left: auto;
+  }
+
+  .slot-role.primary {
+    background: rgba(0,229,255,0.1);
+    border: 1px solid rgba(0,229,255,0.3);
+    color: var(--cyan);
+  }
+
+  .slot-role.secondary {
+    background: rgba(255,183,0,0.08);
+    border: 1px solid rgba(255,183,0,0.2);
+    color: var(--amber);
+  }
+
+  .slot-serving {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    padding: 1px 8px;
+    border-radius: 2px;
+    background: rgba(0,255,65,0.15);
+    border: 1px solid rgba(0,255,65,0.4);
+    color: var(--green);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .slot-status {
+    font-size: 11px;
+    color: var(--green-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .slot-status.ok { color: var(--green); }
+  .slot-status.down { color: var(--red); }
+
+  .slot-url {
+    font-size: 10px;
+    color: var(--green-dim);
+    margin-top: 6px;
+    word-break: break-all;
+    opacity: 0.6;
+  }
 
   /* Log panel */
   .log-panel {
@@ -324,18 +448,6 @@
   @keyframes blink {
     50% { opacity: 0; }
   }
-
-  /* Flatline for offline */
-  .flatline {
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--red), transparent);
-    margin: 16px 0;
-    animation: flatline 2s ease-in-out infinite;
-  }
-  @keyframes flatline {
-    0%, 100% { opacity: 0.3; }
-    50%       { opacity: 1; }
-  }
 </style>
 </head>
 <body>
@@ -343,17 +455,19 @@
 
 <div class="container">
   <header>
-    <div class="sys-label">SYSTEM MONITOR // GITHUB ACTIONS RUNNER</div>
+    <div class="sys-label">SYSTEM MONITOR // DUAL RUNNER HA CLUSTER</div>
     <h1>AW-RUNNER</h1>
-    <div class="subtitle">LONG-RUNNING FASTAPI · CLOUDFLARE TUNNEL · COPILOT AGENT</div>
+    <div class="subtitle">PRIMARY / SECONDARY FAILOVER · CLOUDFLARE TUNNEL · ZERO DOWNTIME</div>
   </header>
 
+  <!-- Overall status -->
   <div class="status-card loading" id="statusCard">
     <div class="status-row">
       <div class="pulse-ring loading" id="pulseRing">
         <div class="pulse-dot loading" id="pulseDot"></div>
       </div>
       <div class="status-text loading" id="statusText">INITIALIZING<span class="blink">_</span></div>
+      <div class="active-badge" id="activeBadge" style="display:none">SERVING: ──</div>
     </div>
 
     <div class="metrics" id="metrics">
@@ -365,10 +479,36 @@
         <div class="metric-label">UPTIME (RAW)</div>
         <div class="metric-value small dim" id="uptimeSeconds">──────</div>
       </div>
-      <div class="metric" style="grid-column: 1/-1">
-        <div class="metric-label">TUNNEL ENDPOINT</div>
+      <div class="metric">
+        <div class="metric-label">ACTIVE TUNNEL</div>
         <div class="metric-value small dim" id="tunnelUrl">──────</div>
       </div>
+      <div class="metric">
+        <div class="metric-label">HA MODE</div>
+        <div class="metric-value small dim" id="haMode">──────</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Runner slots -->
+  <div class="slots-grid">
+    <div class="slot-card" id="slotCardA">
+      <div class="slot-header">
+        <div class="slot-dot no-url" id="slotDotA"></div>
+        <span class="slot-name">RUNNER-A</span>
+        <span class="slot-role primary">PRIMARY</span>
+      </div>
+      <div class="slot-status" id="slotStatusA">CHECKING...</div>
+      <div class="slot-url" id="slotUrlA">──</div>
+    </div>
+    <div class="slot-card" id="slotCardB">
+      <div class="slot-header">
+        <div class="slot-dot no-url" id="slotDotB"></div>
+        <span class="slot-name">RUNNER-B</span>
+        <span class="slot-role secondary">SECONDARY</span>
+      </div>
+      <div class="slot-status" id="slotStatusB">CHECKING...</div>
+      <div class="slot-url" id="slotUrlB">──</div>
     </div>
   </div>
 
@@ -385,7 +525,7 @@
   </div>
 
   <footer>
-    <span>© 2026 <a href="https://yazelin.github.io" target="_blank">YAZELIN</a> · AW-RUNNER</span>
+    <span>&copy; 2026 <a href="https://yazelin.github.io" target="_blank">YAZELIN</a> &middot; AW-RUNNER</span>
     <div style="display:flex;gap:20px;">
       <a href="https://github.com/yazelin/aw-runner" target="_blank">[ REPO ]</a>
       <a href="https://github.com/yazelin/aw-runner/actions" target="_blank">[ ACTIONS ]</a>
@@ -417,47 +557,96 @@ function renderLogs() {
   ).join('');
 }
 
-function setOnline(data) {
-  const card = document.getElementById('statusCard');
-  card.className = 'status-card online';
+function setSlot(slot, info) {
+  const dotEl = document.getElementById(`slotDot${slot}`);
+  const statusEl = document.getElementById(`slotStatus${slot}`);
+  const urlEl = document.getElementById(`slotUrl${slot}`);
+  const cardEl = document.getElementById(`slotCard${slot}`);
 
-  const ring = document.getElementById('pulseRing');
-  ring.className = 'pulse-ring';
-  document.getElementById('pulseDot').className = 'pulse-dot';
+  urlEl.textContent = info.url || '──';
 
-  document.getElementById('statusText').innerHTML = 'ONLINE <span class="blink">_</span>';
-  document.getElementById('statusText').className = 'status-text online';
+  // Remove serving badge if present
+  const existingBadge = cardEl.querySelector('.slot-serving');
+  if (existingBadge) existingBadge.remove();
 
-  document.getElementById('uptime').textContent = data.uptime || '──';
-  document.getElementById('uptime').className = 'metric-value';
-
-  document.getElementById('uptimeSeconds').textContent =
-    data.uptime_seconds != null ? `${data.uptime_seconds.toLocaleString()} seconds` : '──';
-  document.getElementById('uptimeSeconds').className = 'metric-value small';
-
-  document.getElementById('tunnelUrl').textContent = data.runner_url || '──';
-  document.getElementById('tunnelUrl').className = 'metric-value small';
+  if (info.status === 'ok') {
+    dotEl.className = 'slot-dot ok';
+    statusEl.textContent = 'ONLINE';
+    statusEl.className = 'slot-status ok';
+    cardEl.className = `slot-card ok${info.serving ? ' active' : ''}`;
+    if (info.serving) {
+      const badge = document.createElement('span');
+      badge.className = 'slot-serving';
+      badge.textContent = 'SERVING';
+      cardEl.querySelector('.slot-header').appendChild(badge);
+    }
+  } else if (info.status === 'unreachable') {
+    dotEl.className = 'slot-dot down';
+    statusEl.textContent = 'UNREACHABLE';
+    statusEl.className = 'slot-status down';
+    cardEl.className = 'slot-card down';
+  } else {
+    dotEl.className = 'slot-dot no-url';
+    statusEl.textContent = info.status === 'no_url' ? 'NOT REGISTERED' : 'OFFLINE';
+    statusEl.className = 'slot-status';
+    cardEl.className = 'slot-card down';
+  }
 }
 
-function setOffline(label, runnerUrl) {
+function setOverall(state, data) {
   const card = document.getElementById('statusCard');
-  card.className = 'status-card offline';
-
   const ring = document.getElementById('pulseRing');
-  ring.className = 'pulse-ring offline';
-  document.getElementById('pulseDot').className = 'pulse-dot offline';
+  const dot = document.getElementById('pulseDot');
+  const text = document.getElementById('statusText');
+  const badge = document.getElementById('activeBadge');
 
-  document.getElementById('statusText').innerHTML = `${label} <span class="blink">_</span>`;
-  document.getElementById('statusText').className = 'status-text offline';
+  if (state === 'online') {
+    card.className = 'status-card online';
+    ring.className = 'pulse-ring';
+    dot.className = 'pulse-dot';
+    text.innerHTML = 'ONLINE <span class="blink">_</span>';
+    text.className = 'status-text online';
 
-  document.getElementById('uptime').textContent = '──────';
-  document.getElementById('uptime').className = 'metric-value dim';
+    document.getElementById('uptime').textContent = data.uptime || '──';
+    document.getElementById('uptime').className = 'metric-value';
+    document.getElementById('uptimeSeconds').textContent =
+      data.uptime_seconds != null ? `${data.uptime_seconds.toLocaleString()} seconds` : '──';
+    document.getElementById('uptimeSeconds').className = 'metric-value small';
 
-  document.getElementById('uptimeSeconds').textContent = '──────';
-  document.getElementById('uptimeSeconds').className = 'metric-value small dim';
+    // Active tunnel
+    const activeSlot = data.active_slot;
+    const activeRunner = activeSlot === 'a' ? data.runner_a : data.runner_b;
+    document.getElementById('tunnelUrl').textContent = activeRunner?.url || '──';
+    document.getElementById('tunnelUrl').className = 'metric-value small';
 
-  document.getElementById('tunnelUrl').textContent = runnerUrl || '──────';
-  document.getElementById('tunnelUrl').className = `metric-value small ${runnerUrl ? '' : 'dim'}`;
+    // HA mode
+    const aOk = data.runner_a?.status === 'ok';
+    const bOk = data.runner_b?.status === 'ok';
+    const haText = aOk && bOk ? 'DUAL ACTIVE' : activeSlot === 'a' ? 'PRIMARY ONLY' : 'FAILOVER (SECONDARY)';
+    document.getElementById('haMode').textContent = haText;
+    document.getElementById('haMode').className = 'metric-value small';
+
+    // Active badge
+    const slotLabel = activeSlot === 'a' ? 'PRIMARY (A)' : 'SECONDARY (B)';
+    badge.textContent = `SERVING: ${slotLabel}`;
+    badge.style.display = '';
+  } else {
+    card.className = 'status-card offline';
+    ring.className = 'pulse-ring offline';
+    dot.className = 'pulse-dot offline';
+    text.innerHTML = `${state.toUpperCase()} <span class="blink">_</span>`;
+    text.className = 'status-text offline';
+
+    document.getElementById('uptime').textContent = '──────';
+    document.getElementById('uptime').className = 'metric-value dim';
+    document.getElementById('uptimeSeconds').textContent = '──────';
+    document.getElementById('uptimeSeconds').className = 'metric-value small dim';
+    document.getElementById('tunnelUrl').textContent = '──────';
+    document.getElementById('tunnelUrl').className = 'metric-value small dim';
+    document.getElementById('haMode').textContent = 'ALL RUNNERS DOWN';
+    document.getElementById('haMode').className = 'metric-value small dim';
+    badge.style.display = 'none';
+  }
 }
 
 async function fetchStatus() {
@@ -466,18 +655,25 @@ async function fetchStatus() {
     const res = await fetch(WORKER_STATUS_URL, { cache: 'no-store' });
     const data = await res.json();
 
+    // Update slot cards
+    const activeSlot = data.active_slot;
+    setSlot('A', { ...data.runner_a, serving: activeSlot === 'a' });
+    setSlot('B', { ...data.runner_b, serving: activeSlot === 'b' });
+
     if (data.status === 'ok') {
-      setOnline(data);
-      addLog(`online · uptime ${data.uptime}`);
-    } else if (data.status === 'unreachable') {
-      setOffline('UNREACHABLE', data.runner_url);
-      addLog(`tunnel registered but fastapi unreachable: ${data.runner_url}`, 'warn');
+      setOverall('online', data);
+      const aOk = data.runner_a?.status === 'ok';
+      const bOk = data.runner_b?.status === 'ok';
+      const mode = aOk && bOk ? 'dual active' : activeSlot === 'a' ? 'primary serving' : 'failover to secondary';
+      addLog(`online · uptime ${data.uptime} · ${mode} · serving via runner-${activeSlot}`);
     } else {
-      setOffline('OFFLINE', null);
-      addLog('runner offline — no tunnel registered', 'warn');
+      setOverall('offline', data);
+      addLog('all runners offline', 'warn');
     }
   } catch (e) {
-    setOffline('ERROR', null);
+    setOverall('error', {});
+    setSlot('A', { status: 'error' });
+    setSlot('B', { status: 'error' });
     addLog(`fetch failed: ${e.message}`, 'err');
   }
 
@@ -486,7 +682,7 @@ async function fetchStatus() {
   // Restart countdown animation
   const bar = document.getElementById('refreshBar');
   bar.style.animation = 'none';
-  bar.offsetHeight; // reflow
+  bar.offsetHeight;
   bar.style.animation = 'countdown 30s linear forwards';
 }
 

@@ -1,4 +1,4 @@
-name: runner
+name: runner-a
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   serve:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +53,12 @@ jobs:
           sleep 10
           TUNNEL_URL=$(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
           echo "Tunnel URL: $TUNNEL_URL"
+          # Register as runner_a_url
+          curl -sf -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/storage/kv/namespaces/${{ secrets.KV_NAMESPACE_ID }}/values/runner_a_url" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -d "$TUNNEL_URL"
+          # Also write legacy key for backwards compat during deploy
           curl -sf -X PUT \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT_ID }}/storage/kv/namespaces/${{ secrets.KV_NAMESPACE_ID }}/values/runner_url" \
             -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
@@ -60,14 +66,51 @@ jobs:
         env:
           NO_AUTOUPDATE: "true"
 
-      - name: Notify runner online
+      - name: Notify runner-a online
         run: |
           TUNNEL_URL=$(grep -oP 'https://\S+\.trycloudflare\.com' /tmp/cf.log | head -1)
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          MSG=$(printf "🟢 aw-runner 已上線\nTunnel: %s\nRun: %s" "$TUNNEL_URL" "$RUN_URL")
+          MSG=$(printf "🟢 runner-a [PRIMARY] 已上線\nTunnel: %s\nRun: %s" "$TUNNEL_URL" "$RUN_URL")
           python3 .github/scripts/send_telegram_message.py "${{ secrets.TELEGRAM_CHAT_ID }}" "$MSG"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-      - name: Sleep 6h
-        run: sleep 21600
+      - name: Monitor loop
+        run: |
+          SLOT="a"
+          PARTNER_WORKFLOW="runner-b.yml"
+          INTERVAL=300
+          MAX_LOOPS=66        # ~5.5h
+          TRIGGER_AFTER=30    # trigger partner after loop #30 (~2.5h)
+
+          START_TIME=$(date +%s)
+
+          for i in $(seq 1 $MAX_LOOPS); do
+            echo "=== [$SLOT] Check #$i/$(echo $MAX_LOOPS) at $(date -u) ==="
+
+            # Check partner status
+            PARTNER_COUNT=$(gh run list --workflow=$PARTNER_WORKFLOW \
+              --repo ${{ github.repository }} \
+              --status in_progress --json databaseId -q 'length')
+            PARTNER_QUEUED=$(gh run list --workflow=$PARTNER_WORKFLOW \
+              --repo ${{ github.repository }} \
+              --status queued --json databaseId -q 'length')
+            PARTNER_TOTAL=$((PARTNER_COUNT + PARTNER_QUEUED))
+            echo "Partner: in_progress=$PARTNER_COUNT queued=$PARTNER_QUEUED"
+
+            if [ "$PARTNER_TOTAL" -eq 0 ] && [ "$i" -ge "$TRIGGER_AFTER" ]; then
+              echo "Partner not running and we're past loop #$TRIGGER_AFTER — triggering partner..."
+              gh workflow run $PARTNER_WORKFLOW --repo ${{ github.repository }}
+              echo "Triggered $PARTNER_WORKFLOW"
+            elif [ "$PARTNER_TOTAL" -eq 0 ]; then
+              echo "Partner not running, but too early to trigger (loop #$i < #$TRIGGER_AFTER)"
+            else
+              echo "Partner is alive"
+            fi
+
+            sleep $INTERVAL
+          done
+
+          echo "Runner-$SLOT loop finished, exiting gracefully"
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
