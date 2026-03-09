@@ -13,16 +13,34 @@ Telegram Bot (@aw_runner_bot)
      ↓ webhook（隨機 secret path）
 Cloudflare Worker
      ├─ 驗證 chat_id 白名單
-     ├─ 讀 KV 取得 runner_url
-     ↓ POST /task
-FastAPI Server（GitHub Actions Runner）
+     ├─ 讀 KV 取得 runner_a_url / runner_b_url
+     ├─ Health check 兩個 runner（A 優先）
+     ↓ POST /task → 活著的 runner
+FastAPI Server（GitHub Actions Runner A 或 B）
      ↓ copilot --autopilot --yolo -p
 Copilot CLI（AI Agent）
      ↓ 呼叫 .github/scripts/send_telegram_message.py
 回覆 Telegram
 ```
 
-Runner 每 6 小時自我觸發一次新 run 無限接力，啟動時主動發 Telegram 上線通知。
+## 高可用（HA）雙 Runner 架構
+
+```
+Runner A [PRIMARY]:   |======== 5.5h ========|              |======== 5.5h ========|
+Runner B [SECONDARY]:          |======== 5.5h ========|              |======== 5.5h ========|
+                               ↑                      ↑
+                          A 觸發 B (~2.5h)        B 觸發 A (~2.5h)
+
+服務覆蓋:              |--A--|--A+B--|--B--|--A+B--|--A--|--A+B--|--B--|
+                              ↑ 永遠至少一個在線 ↑
+```
+
+- **Runner-A（PRIMARY）**：主要服務節點，Worker 優先路由到 A
+- **Runner-B（SECONDARY）**：備援節點，A 不可用時自動接管
+- 每個 runner 跑 ~5.5 小時，在 GitHub Actions 6h 限制前優雅結束
+- 啟動 ~2.5 小時後檢查對方，若對方不在就觸發，自然形成 ~3h 錯開
+- **零停機**：一個在重啟時，另一個一定在服務中
+- 不需要獨立 watchdog — 互相監控、互相觸發
 
 ## 快速安裝
 
@@ -45,7 +63,7 @@ bash scripts/setup.sh
 | `CF_API_TOKEN` | Cloudflare API token（Workers + KV 寫入） |
 | `KV_NAMESPACE_ID` | Cloudflare KV namespace ID |
 | `RUNNER_API_KEY` | Worker 與 FastAPI 之間的共享密鑰 |
-| `GH_PAT` | GitHub PAT（`workflow` scope，用於 self-trigger） |
+| `GH_PAT` | GitHub PAT（`workflow` scope，用於互相觸發） |
 | `COPILOT_GITHUB_TOKEN` | Fine-grained PAT（Copilot Requests 權限） |
 
 ## 專案結構
@@ -57,15 +75,16 @@ aw-runner/
 │   ├── scripts/
 │   │   └── send_telegram_message.py  # Copilot 呼叫此腳本回覆
 │   └── workflows/
-│       └── runner.yml           # 長跑 workflow（6h 接力）
+│       ├── runner-a.yml         # PRIMARY runner（5.5h 循環）
+│       └── runner-b.yml         # SECONDARY runner（5.5h 循環）
 ├── server/
 │   ├── main.py                  # FastAPI server
 │   └── requirements.txt
 ├── worker/
-│   ├── src/index.ts             # Cloudflare Worker
+│   ├── src/index.ts             # Cloudflare Worker（雙 runner failover）
 │   └── wrangler.toml
 ├── docs/
-│   ├── index.html               # GitHub Pages 狀態頁
+│   ├── index.html               # GitHub Pages 狀態頁（雙 runner 監控）
 │   └── setup.md                 # 完整安裝說明
 ├── scripts/
 │   └── setup.sh                 # 互動式安裝腳本
@@ -80,10 +99,17 @@ aw-runner/
 | `GET /status` | Runner uptime、tunnel URL |
 | `POST /task` | 接收訊息並交給 Copilot 處理（需 `x-api-key`） |
 
-透過 Worker 查詢狀態（含 CORS）：
+透過 Worker 查詢狀態（含雙 runner 資訊）：
 
 ```bash
 curl https://aw-runner-worker.yazelinj303.workers.dev/status
+# 回傳：
+# {
+#   "status": "ok",
+#   "active_slot": "a",
+#   "runner_a": { "status": "ok", "url": "https://..." },
+#   "runner_b": { "status": "ok", "url": "https://..." }
+# }
 ```
 
 ## 安全
@@ -91,3 +117,4 @@ curl https://aw-runner-worker.yazelinj303.workers.dev/status
 - **Worker**：驗證 `chat_id` 白名單，未授權請求靜默忽略
 - **FastAPI**：驗證 `x-api-key`，無效 key 回 401
 - **Tunnel URL**：`trycloudflare.com` 隨機子網域，每次重啟都不同
+- **雙 runner 隔離**：各自獨立的 tunnel，互不影響
